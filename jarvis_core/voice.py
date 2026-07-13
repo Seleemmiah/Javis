@@ -304,24 +304,30 @@ class Voice:
             except sr.WaitTimeoutError:
                 return ""
 
+        # --- Apply noise reduction if available ---
+        raw_data = audio.get_wav_data()
+        raw_data = self._reduce_noise(raw_data)
+
         # --- Try MLX Whisper first (local, zero-latency on Apple Silicon) ---
         try:
             import mlx_whisper
             import tempfile
-            import wave
 
-            # Save audio to a temporary WAV file for mlx_whisper
-            raw_data = audio.get_wav_data()
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
                 f.write(raw_data)
                 tmp_path = f.name
 
+            # Auto-detect language (multilingual) — no language= constraint
             result = mlx_whisper.transcribe(
                 tmp_path,
-                path_or_hf_repo="mlx-community/whisper-base",
-                language="en",
+                path_or_hf_repo="mlx-community/whisper-small",
             )
             command = (result.get("text") or "").strip()
+
+            # Detect language for logging
+            lang = result.get("language", "en")
+            if lang != "en":
+                print(f"[voice] Detected language: {lang}")
 
             # Clean up temp file
             try:
@@ -336,14 +342,15 @@ class Voice:
             return ""
 
         except ImportError:
-            # MLX Whisper not installed, fall through to Google
             pass
         except Exception as exc:
             print(f"[voice] MLX Whisper error ({exc}), falling back to Google...")
 
         # --- Fallback: Google cloud speech recognition ---
         try:
-            command = self.recognizer.recognize_google(audio)
+            # Rebuild AudioData from (possibly noise-reduced) raw_data
+            fallback_audio = sr.AudioData(raw_data, audio.sample_rate, audio.sample_width)
+            command = self.recognizer.recognize_google(fallback_audio)
             print(f"You: {command}")
             return command.lower().strip()
         except sr.UnknownValueError:
@@ -351,4 +358,48 @@ class Voice:
         except sr.RequestError:
             self.speak("Speech recognition is offline. Check your network.")
             return ""
+
+    def _reduce_noise(self, wav_bytes: bytes) -> bytes:
+        """Apply AI noise reduction to WAV audio bytes. Returns cleaned WAV bytes."""
+        try:
+            import noisereduce as nr
+            import numpy as np
+            import io
+            import wave
+
+            # Read WAV bytes into numpy array
+            with io.BytesIO(wav_bytes) as buf:
+                with wave.open(buf, "rb") as wf:
+                    rate = wf.getframerate()
+                    n_channels = wf.getnchannels()
+                    sampwidth = wf.getsampwidth()
+                    frames = wf.readframes(wf.getnframes())
+
+            dtype = np.int16 if sampwidth == 2 else np.int32
+            audio_np = np.frombuffer(frames, dtype=dtype).astype(np.float32)
+
+            # Apply noise reduction
+            reduced = nr.reduce_noise(
+                y=audio_np,
+                sr=rate,
+                prop_decrease=0.7,
+                stationary=False,
+            )
+
+            # Convert back to WAV bytes
+            reduced_int = np.clip(reduced, -32768, 32767).astype(np.int16)
+            out_buf = io.BytesIO()
+            with wave.open(out_buf, "wb") as wf:
+                wf.setnchannels(n_channels)
+                wf.setsampwidth(2)
+                wf.setframerate(rate)
+                wf.writeframes(reduced_int.tobytes())
+            return out_buf.getvalue()
+
+        except ImportError:
+            # noisereduce not installed — return original
+            return wav_bytes
+        except Exception:
+            # Any error — return original
+            return wav_bytes
 

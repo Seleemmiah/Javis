@@ -30,6 +30,16 @@ class Agent:
         self.speak = speak
         self.on_log = on_log or (lambda m: None)
 
+    def _stream_speak(self, text: str) -> None:
+        """Speak text sentence-by-sentence for faster perceived response."""
+        import re as _re
+        # Split on sentence boundaries
+        sentences = _re.split(r'(?<=[.!?])\s+', text)
+        for sentence in sentences:
+            sentence = sentence.strip()
+            if sentence:
+                self.speak(sentence)
+
     def _context(self, user_text: str) -> str:
         parts = [
             system_info.system_report(),
@@ -64,9 +74,10 @@ class Agent:
             remember = (plan.get("remember") or "").strip()
 
             if speech:
-                # Speak first step always; later steps only if meaningful
+                # Stream speech sentence-by-sentence in background
+                # so JARVIS starts talking immediately while actions execute
                 if step == 0 or not done or len(actions) > 1:
-                    self.speak(speech)
+                    self._stream_speak(speech)
                 final_speech = speech
 
             if remember:
