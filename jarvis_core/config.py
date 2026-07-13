@@ -31,7 +31,7 @@ GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
 
 # Local LLM (Ollama) — free offline brain
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gemma3:12b")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2")
 USE_OLLAMA = os.getenv("JARVIS_USE_OLLAMA", "auto")  # auto | always | never
 
 # Brain priority: gemini → openai → ollama
