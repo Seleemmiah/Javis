@@ -303,6 +303,45 @@ class Voice:
                 )
             except sr.WaitTimeoutError:
                 return ""
+
+        # --- Try MLX Whisper first (local, zero-latency on Apple Silicon) ---
+        try:
+            import mlx_whisper
+            import tempfile
+            import wave
+
+            # Save audio to a temporary WAV file for mlx_whisper
+            raw_data = audio.get_wav_data()
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+                f.write(raw_data)
+                tmp_path = f.name
+
+            result = mlx_whisper.transcribe(
+                tmp_path,
+                path_or_hf_repo="mlx-community/whisper-base",
+                language="en",
+            )
+            command = (result.get("text") or "").strip()
+
+            # Clean up temp file
+            try:
+                import os
+                os.unlink(tmp_path)
+            except Exception:
+                pass
+
+            if command:
+                print(f"You: {command}")
+                return command.lower().strip()
+            return ""
+
+        except ImportError:
+            # MLX Whisper not installed, fall through to Google
+            pass
+        except Exception as exc:
+            print(f"[voice] MLX Whisper error ({exc}), falling back to Google...")
+
+        # --- Fallback: Google cloud speech recognition ---
         try:
             command = self.recognizer.recognize_google(audio)
             print(f"You: {command}")
@@ -312,3 +351,4 @@ class Voice:
         except sr.RequestError:
             self.speak("Speech recognition is offline. Check your network.")
             return ""
+
