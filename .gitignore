@@ -1,0 +1,8 @@
+# JARVIS ignores
+.env
+jarvis.log
+.jarvis_cache/
+__pycache__/
+*.pyc
+memory.json
+long_term_memory.json
