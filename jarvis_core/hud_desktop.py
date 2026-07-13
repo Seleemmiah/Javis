@@ -1,24 +1,71 @@
-"""Transparent desktop widget HUD for J.A.R.V.I.S."""
+"""Menu Bar (System Tray) HUD for J.A.R.V.I.S."""
 from __future__ import annotations
 
 import threading
-import tkinter as tk
+import time
 from datetime import datetime
+
+import pystray
+from PIL import Image, ImageDraw
+from pystray import MenuItem as item
+
 
 class DesktopHUD:
     def __init__(self) -> None:
-        self.root = None
-        self._running = False
-        self._thread = None
         self.mode = "STANDBY"
         self.status = "Systems nominal."
         self.battery = "—"
         self.cpu = "—"
-        self.log = []
         self.last_jarvis = ""
         self.last_user = ""
         self._lock = threading.Lock()
+        
+        self.icon = pystray.Icon(
+            "jarvis", 
+            self._create_image("gray"), 
+            menu=self._build_menu()
+        )
+        self._running = False
+        self._update_thread = None
 
+    def _create_image(self, color: str) -> Image.Image:
+        """Generate a 64x64 icon."""
+        width = 64
+        height = 64
+        
+        colors = {
+            "gray": (100, 100, 100),
+            "blue": (0, 120, 255),
+            "green": (0, 255, 0),
+            "yellow": (255, 200, 0),
+            "red": (255, 0, 0)
+        }
+        fill = colors.get(color, colors["gray"])
+        
+        image = Image.new('RGBA', (width, height), (0, 0, 0, 0))
+        dc = ImageDraw.Draw(image)
+        # Draw a circle for the core
+        dc.ellipse((8, 8, 56, 56), fill=fill)
+        # Draw inner ring
+        dc.ellipse((16, 16, 48, 48), fill=(255, 255, 255, 128))
+        return image
+
+    def _build_menu(self) -> pystray.Menu:
+        return pystray.Menu(
+            item(lambda text: f"Mode: {self.mode}", lambda icon, item: None, enabled=False),
+            item(lambda text: f"{self.status[:40]}", lambda icon, item: None, enabled=False),
+            pystray.Menu.SEPARATOR,
+            item(lambda text: f"JARVIS: {self.last_jarvis[:60]}", lambda icon, item: None, enabled=False),
+            item(lambda text: f"You: {self.last_user[:60]}", lambda icon, item: None, enabled=False),
+            pystray.Menu.SEPARATOR,
+            item(lambda text: f"BAT: {self.battery} | CPU: {self.cpu}", lambda icon, item: None, enabled=False),
+            pystray.Menu.SEPARATOR,
+            item('Quit J.A.R.V.I.S.', self._on_quit)
+        )
+
+    def _on_quit(self, icon, item):
+        self.stop()
+        
     def set_levels(self, battery: str = None, cpu: str = None, **kwargs) -> None:
         with self._lock:
             if battery: self.battery = battery
@@ -27,6 +74,18 @@ class DesktopHUD:
     def set_mode(self, mode: str) -> None:
         with self._lock:
             self.mode = mode
+            
+        color = "gray"
+        if mode == "STANDBY":
+            color = "blue"
+        elif mode == "AWAKE":
+            color = "green"
+        elif mode == "EXECUTING":
+            color = "yellow"
+        elif mode == "ALERT":
+            color = "red"
+            
+        self.icon.icon = self._create_image(color)
 
     def set_status(self, text: str) -> None:
         with self._lock:
@@ -38,74 +97,33 @@ class DesktopHUD:
             if user: self.last_user = user
 
     def log_event(self, msg: str) -> None:
-        with self._lock:
-            self.log.append(msg)
-            if len(self.log) > 5:
-                self.log.pop(0)
+        pass  # We don't show full logs in the menu bar to save space
+
+    def _updater_loop(self):
+        """Periodically refresh the menu text."""
+        while self._running:
+            time.sleep(2)
+            try:
+                # Force menu text update
+                if hasattr(self.icon, 'update_menu'):
+                    self.icon.update_menu()
+            except Exception:
+                pass
 
     def start(self) -> None:
         if self._running:
             return
         self._running = True
-        # We don't start the thread here anymore. Tkinter runs on main thread.
+        self._update_thread = threading.Thread(target=self._updater_loop, daemon=True)
+        self._update_thread.start()
 
     def run_main_loop(self) -> None:
-        self._run_tk()
+        """Blocks and runs the menu bar app."""
+        self.icon.run()
 
     def stop(self) -> None:
         self._running = False
-        if self.root:
-            self.root.quit()
-
-    def _run_tk(self) -> None:
-        self.root = tk.Tk()
-        self.root.overrideredirect(True) # Frameless
-        self.root.attributes('-alpha', 0.85) # Transparent
-        self.root.attributes('-topmost', True) # Always on top
-        self.root.configure(bg='#000510')
-
-        screen_width = self.root.winfo_screenwidth()
-        width = 320
-        height = 280
-        x = screen_width - width - 20
-        y = 40
-        self.root.geometry(f"{width}x{height}+{x}+{y}")
-
-        self.title_lbl = tk.Label(self.root, text="J.A.R.V.I.S.", font=("Courier", 16, "bold"), fg="#00ffff", bg="#000510")
-        self.title_lbl.pack(anchor="w", padx=10, pady=(10, 0))
-
-        self.mode_lbl = tk.Label(self.root, text="STANDBY", font=("Courier", 12, "bold"), fg="#0055ff", bg="#000510")
-        self.mode_lbl.pack(anchor="w", padx=10)
-
-        self.vitals_lbl = tk.Label(self.root, text="BAT: -- | CPU: --", font=("Courier", 10), fg="#00ffff", bg="#000510")
-        self.vitals_lbl.pack(anchor="w", padx=10, pady=5)
-
-        self.status_lbl = tk.Label(self.root, text="Status", font=("Courier", 10), fg="white", bg="#000510", wraplength=300, justify="left")
-        self.status_lbl.pack(anchor="w", padx=10)
-        
-        self.jarvis_lbl = tk.Label(self.root, text="", font=("Courier", 10, "italic"), fg="#00ffff", bg="#000510", wraplength=300, justify="left")
-        self.jarvis_lbl.pack(anchor="w", padx=10, pady=5)
-
-        self.log_lbl = tk.Label(self.root, text="", font=("Courier", 9), fg="#888888", bg="#000510", justify="left", wraplength=300)
-        self.log_lbl.pack(anchor="w", padx=10, pady=(10, 0))
-
-        self._update_ui()
-        self.root.mainloop()
-
-    def _update_ui(self) -> None:
-        if not self._running:
-            self.root.destroy()
-            return
-            
-        with self._lock:
-            self.title_lbl.config(text=f"J.A.R.V.I.S.  [{datetime.now().strftime('%H:%M:%S')}]")
-            
-            mode_colors = {"STANDBY": "#0055ff", "AWAKE": "#00ff00", "EXECUTING": "#ffff00", "ALERT": "#ff0000"}
-            self.mode_lbl.config(text=f"[{self.mode}]", fg=mode_colors.get(self.mode, "white"))
-            
-            self.vitals_lbl.config(text=f"BAT: {self.battery} | CPU: {self.cpu}")
-            self.status_lbl.config(text=self.status[:120])
-            self.jarvis_lbl.config(text=self.last_jarvis[:150])
-            self.log_lbl.config(text="\n".join(self.log))
-            
-        self.root.after(200, self._update_ui)
+        try:
+            self.icon.stop()
+        except Exception:
+            pass
