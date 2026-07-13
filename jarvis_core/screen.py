@@ -73,9 +73,9 @@ def describe_screen(question: str = "What is on the screen?") -> str:
                                 "You are J.A.R.V.I.S., a hyper-intelligent AI assistant. "
                                 "You are looking at the user's screen right now. "
                                 f"Describe what you see and answer: {question}. "
-                                "If you see code, analyze it — mention the language, "
-                                "any bugs, and suggest improvements. "
-                                "Be concise (3-6 sentences). Speak naturally as JARVIS would."
+                                "If you see code, DO NOT read it line by line. Give a high-level summary "
+                                "of what the code does, point out any obvious bugs, and suggest improvements. "
+                                "Keep your response conversational, concise (2-4 sentences), and do not output raw code back."
                             )
                         },
                         {
@@ -124,7 +124,10 @@ def describe_screen(question: str = "What is on the screen?") -> str:
                                 "type": "text",
                                 "text": (
                                     "You are J.A.R.V.I.S. Describe the screen briefly "
-                                    f"and answer: {question}. Be concise (3-6 sentences)."
+                                    f"and answer: {question}. "
+                                    "If you see code, DO NOT read it line by line. Give a high-level summary "
+                                    "of what the code does, point out bugs, and suggest improvements. "
+                                    "Be conversational, concise (2-4 sentences), and do not output raw code back."
                                 ),
                             },
                             {
