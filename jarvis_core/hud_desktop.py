@@ -65,6 +65,8 @@ class DesktopHUD:
 
     def _on_quit(self, icon, item):
         self.stop()
+        import os
+        os._exit(0)
         
     def set_levels(self, battery: str = None, cpu: str = None, **kwargs) -> None:
         with self._lock:
